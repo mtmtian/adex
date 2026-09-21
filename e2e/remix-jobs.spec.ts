@@ -96,17 +96,22 @@ test.beforeAll(async ({}, testInfo) => {
   const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const email = `remix-jobs-e2e-${unique}@adex-e2e.dev`
   const res = await ctx.post(p('/api/auth/register'), {
-    data: { email, password: 'e2e-test-password-1', name: `Remix Jobs E2E ${unique}` },
+    data: { email, password: 'e2e-test-password-1', name: `${crypto.randomUUID().slice(0, 12)} Remix E2E` },
   })
   expect(res.ok(), await res.text()).toBeTruthy()
   userId = (await res.json()).id
+})
 
-  const orgsRes = await ctx.get(p('/api/orgs'))
-  expect(orgsRes.ok()).toBeTruthy()
-  const orgs = await orgsRes.json()
-  expect(Array.isArray(orgs)).toBe(true)
-  expect(orgs.length).toBeGreaterThan(0)
-  orgId = orgs[0].id
+// Keep real per-org cost/rate guards enabled without coupling unrelated cases
+// to the number of requests already made by this suite.
+test.beforeEach(async () => {
+  const res = await ctx.post(p('/api/orgs'), {
+    data: { name: `Remix E2E ${crypto.randomUUID()}` },
+  })
+  expect(res.status(), await res.text()).toBe(200)
+  orgId = (await res.json()).id
+  const switched = await ctx.post(p('/api/orgs/switch'), { data: { orgId } })
+  expect(switched.status(), await switched.text()).toBe(200)
 })
 
 test.afterAll(async () => {
@@ -159,6 +164,7 @@ async function createRemixJob(competitorCreativeId: string, extra?: Record<strin
   const res = await ctx.post(p('/api/creatives/remix-jobs'), {
     data: { competitorCreativeId, ...REMIX_PRODUCT, ...extra },
   })
+  if (!extra) expect(res.status(), await res.text()).toBe(200)
   return res
 }
 
@@ -739,7 +745,7 @@ test.describe('worker/remix-jobs — t1/t2 refs (direct-SQL Asset)', () => {
       data: {
         email: `remix-jobs-e2e-orgb-${unique}@adex-e2e.dev`,
         password: 'e2e-test-password-1',
-        name: `Remix Jobs E2E OrgB ${unique}`,
+        name: `${crypto.randomUUID().slice(0, 12)} Remix OrgB`,
       },
     })
     expect(bRes.ok(), await bRes.text()).toBeTruthy()
