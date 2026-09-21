@@ -42,6 +42,15 @@ import {
   workerUnauthorized,
   jobNotFound,
 } from '@/lib/growth/remix-job'
+import {
+  isValidCostTokens,
+  validateActualMedia,
+  validateBeats,
+  validateV2QcReport,
+  jsonStructuresEqual,
+  REMIX_WORKER_PROTOCOL_VERSION,
+  type ActualMedia,
+} from '@/lib/growth/remix-worker-protocol'
 
 /** Thrown inside the transaction to short-circuit with a specific HTTP response. */
 class ReportRouteError extends Error {
@@ -69,12 +78,30 @@ const TERMINAL_STATUSES = ['succeeded', 'failed']
 interface ReportBody {
   jobId?: string
   claimToken?: string
+  protocolVersion?: number
   status?: ReportStatus
   beats?: unknown
   qcReport?: unknown
   costTokens?: number
   outputUrl?: string
+  media?: unknown
   error?: string
+}
+
+/** Compare only fields supplied by a replaying terminal report. */
+function sameTerminalPayload(existing: {
+  outputUrl: string | null
+  beats: unknown
+  qcReport: unknown
+  costTokens: number | null
+  error: string | null
+}, body: ReportBody): boolean {
+  if (body.outputUrl !== undefined && body.outputUrl !== existing.outputUrl) return false
+  if (body.beats !== undefined && !jsonStructuresEqual(body.beats, existing.beats)) return false
+  if (body.qcReport !== undefined && !jsonStructuresEqual(body.qcReport, existing.qcReport)) return false
+  if (body.costTokens !== undefined && body.costTokens !== existing.costTokens) return false
+  if (body.error !== undefined && body.error !== existing.error) return false
+  return true
 }
 
 export async function POST(req: NextRequest) {
@@ -93,6 +120,9 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: 'invalid json' }, { status: 400 })
   }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return NextResponse.json({ error: 'invalid json body' }, { status: 400 })
+  }
 
   if (!body.jobId) {
     return NextResponse.json({ error: 'jobId is required' }, { status: 400 })
@@ -103,21 +133,69 @@ export async function POST(req: NextRequest) {
   if (body.status !== undefined && !VALID_STATUSES.includes(body.status)) {
     return NextResponse.json({ error: 'invalid status' }, { status: 400 })
   }
+  if (body.protocolVersion !== undefined && body.protocolVersion !== REMIX_WORKER_PROTOCOL_VERSION) {
+    return NextResponse.json({ error: 'unsupported protocolVersion' }, { status: 400 })
+  }
+  if (body.beats !== undefined) {
+    const beats = validateBeats(body.beats)
+    if (!beats.ok) return NextResponse.json({ error: beats.error }, { status: 400 })
+  }
+  if (body.costTokens !== undefined && !isValidCostTokens(body.costTokens)) {
+    return NextResponse.json({ error: 'costTokens must be a non-negative safe integer' }, { status: 400 })
+  }
   if (body.status === 'succeeded' && !body.outputUrl) {
     return NextResponse.json({ error: 'outputUrl is required when status is succeeded' }, { status: 400 })
   }
 
+  let actualMedia: ActualMedia | undefined
+  if (body.media !== undefined) {
+    const media = validateActualMedia(body.media)
+    if (!media.ok) return NextResponse.json({ error: media.error }, { status: 400 })
+    actualMedia = media.value
+  }
+  if (body.protocolVersion === REMIX_WORKER_PROTOCOL_VERSION && body.status === 'succeeded') {
+    const qc = validateV2QcReport(body.qcReport)
+    if (!qc.ok) return NextResponse.json({ error: qc.error }, { status: 400 })
+    if (!actualMedia) return NextResponse.json({ error: 'media is required for protocolVersion 2 success' }, { status: 400 })
+  }
+
   const jobId = body.jobId
   const claimToken = body.claimToken
+  let idempotentTerminal = false
 
   try {
     const job = await prisma.$transaction(async (tx) => {
+      const existingForCheck = await tx.remixJob.findUnique({ where: { id: jobId } })
+      if (!existingForCheck) throw new ReportRouteError(jobNotFound())
+
+      // Terminal reports are immutable. A transport retry with the same token,
+      // status and payload is safe to acknowledge without touching either row;
+      // any conflicting terminal payload is a 409 instead of a rewrite.
+      if (TERMINAL_STATUSES.includes(existingForCheck.status)) {
+        if (existingForCheck.claimToken !== claimToken) {
+          throw new ReportRouteError(
+            NextResponse.json({ error: 'stale claim', currentStatus: existingForCheck.status }, { status: 409 }),
+          )
+        }
+        if (body.status === existingForCheck.status && sameTerminalPayload(existingForCheck, body)) {
+          if (actualMedia && existingForCheck.creativeId) {
+            const creative = await tx.creative.findUnique({
+              where: { id: existingForCheck.creativeId },
+              select: { width: true, height: true, duration: true },
+            })
+            if (!creative || creative.width !== actualMedia.width || creative.height !== actualMedia.height || creative.duration !== Math.round(actualMedia.durationSec)) {
+              throw new ReportRouteError(NextResponse.json({ error: 'terminal report conflict' }, { status: 409 }))
+            }
+          }
+          idempotentTerminal = true
+          return existingForCheck
+        }
+        throw new ReportRouteError(
+          NextResponse.json({ error: 'terminal report conflict', currentStatus: existingForCheck.status }, { status: 409 }),
+        )
+      }
+
       if (body.status === 'succeeded' && body.outputUrl) {
-        const existingForCheck = await tx.remixJob.findUnique({
-          where: { id: jobId },
-          select: { orgId: true, id: true, attempt: true },
-        })
-        if (!existingForCheck) throw new ReportRouteError(jobNotFound())
         const canonicalUrl =
           `${gcsPublicPrefix()}${GCS_UPLOAD_PREFIX}/remix/${existingForCheck.orgId}/${existingForCheck.id}/v${existingForCheck.attempt}.mp4`
         if (body.outputUrl !== canonicalUrl) {
@@ -134,6 +212,10 @@ export async function POST(req: NextRequest) {
       if (body.costTokens !== undefined) data.costTokens = body.costTokens
       if (body.outputUrl !== undefined) data.outputUrl = body.outputUrl
       if (body.error !== undefined) data.error = body.error
+      // Prisma's @updatedAt is normally automatic, but heartbeat/checkpoint
+      // reports must explicitly refresh the lease timestamp even with no other
+      // fields present.
+      if (body.status === undefined) data.updatedAt = new Date()
 
       let updateCount: number
       if (body.status !== undefined) {
@@ -151,12 +233,28 @@ export async function POST(req: NextRequest) {
       }
 
       if (updateCount !== 1) {
-        const current = await tx.remixJob.findUnique({ where: { id: jobId }, select: { status: true, claimToken: true } })
+        const current = await tx.remixJob.findUnique({ where: { id: jobId } })
         if (!current) throw new ReportRouteError(jobNotFound())
         if (current.claimToken !== claimToken) {
           throw new ReportRouteError(
             NextResponse.json({ error: 'stale claim', currentStatus: current.status }, { status: 409 }),
           )
+        }
+        // A concurrent terminal report can win the state transition between
+        // our initial read and updateMany. Treat the losing identical report
+        // as an idempotent replay, just like a retry received later.
+        if (TERMINAL_STATUSES.includes(current.status) && body.status === current.status && sameTerminalPayload(current, body)) {
+          if (actualMedia && current.creativeId) {
+            const creative = await tx.creative.findUnique({
+              where: { id: current.creativeId },
+              select: { width: true, height: true, duration: true },
+            })
+            if (!creative || creative.width !== actualMedia.width || creative.height !== actualMedia.height || creative.duration !== Math.round(actualMedia.durationSec)) {
+              throw new ReportRouteError(NextResponse.json({ error: 'terminal report conflict' }, { status: 409 }))
+            }
+          }
+          idempotentTerminal = true
+          return current
         }
         throw new ReportRouteError(
           NextResponse.json({ error: 'illegal transition', currentStatus: current.status }, { status: 409 }),
@@ -170,6 +268,11 @@ export async function POST(req: NextRequest) {
         if (body.status === 'succeeded' && body.outputUrl) {
           const qcReport = (body.qcReport ?? updated.qcReport) as { pass?: boolean; hits?: unknown[] } | null | undefined
           const creativeData: Prisma.CreativeUpdateInput = { status: 'ready', fileUrl: body.outputUrl }
+          if (actualMedia) {
+            creativeData.width = actualMedia.width
+            creativeData.height = actualMedia.height
+            creativeData.duration = Math.round(actualMedia.durationSec)
+          }
           if (qcReport && qcReport.pass === false) {
             const hitCount = Array.isArray(qcReport.hits) ? qcReport.hits.length : 0
             creativeData.reviewNotes = `brand QC FAILED (${hitCount} hits) — see RemixJob ${updated.id}`
@@ -186,7 +289,7 @@ export async function POST(req: NextRequest) {
       return updated
     })
 
-    if (body.status && TERMINAL_STATUSES.includes(body.status)) {
+    if (body.status && TERMINAL_STATUSES.includes(body.status) && !idempotentTerminal) {
       await logAudit({
         orgId: job.orgId,
         userId: job.userId,
