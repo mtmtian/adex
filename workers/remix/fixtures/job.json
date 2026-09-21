@@ -1,0 +1,12 @@
+{
+  "tier": "t0_5",
+  "brief": {
+    "ratio": "9:16",
+    "seedance2Prompt": "Original product scene with no third-party logos",
+    "storyboard": [
+      {"role": "hook", "seconds": 3, "description": "Opening shot"},
+      {"role": "scene", "seconds": 3, "description": "Product scene"},
+      {"role": "end-card", "seconds": 2, "description": "Product closing shot"}
+    ]
+  }
+}

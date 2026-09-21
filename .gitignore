@@ -21,6 +21,11 @@
 /.next/
 /out/
 
+# Python worker build/test artifacts
+__pycache__/
+*.py[cod]
+workers/remix/models/
+
 # production
 /build
 
