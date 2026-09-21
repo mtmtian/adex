@@ -1,0 +1,6 @@
+*
+!*.py
+!tests/
+!tests/*.py
+!fixtures/
+!fixtures/*.json
