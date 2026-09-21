@@ -41,14 +41,13 @@ import type { Prisma } from '@/generated/prisma/client'
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit'
 import { logAudit } from '@/lib/audit'
 import { readWorkerAuthHeaders, verifyWorkerHmac, workerUnauthorized, parseEnabledTiers } from '@/lib/growth/remix-job'
+import { REMIX_WORKER_PROTOCOL_VERSION, remixLeaseSeconds } from '@/lib/growth/remix-worker-protocol'
 
 interface ClaimBody {
   jobId?: string
 }
 
 const IN_FLIGHT_STATUSES = ['claimed', 'running', 'assembling', 'qc']
-const LEASE_MINUTES = Number(process.env.REMIX_JOB_LEASE_MINUTES || 30)
-
 function claimableWhere(cutoff: Date): Prisma.RemixJobWhereInput['OR'] {
   return [
     { status: 'pending' },
@@ -76,9 +75,13 @@ export async function POST(req: NextRequest) {
     } catch {
       return NextResponse.json({ error: 'invalid json' }, { status: 400 })
     }
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return NextResponse.json({ error: 'invalid json body' }, { status: 400 })
+    }
   }
 
-  const cutoff = new Date(Date.now() - LEASE_MINUTES * 60_000)
+  const leaseSeconds = remixLeaseSeconds()
+  const cutoff = new Date(Date.now() - leaseSeconds * 1_000)
   const enabledTiers = [...parseEnabledTiers()]
 
   let targetId: string | null = body.jobId ?? null
@@ -158,6 +161,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     job: {
+      protocolVersion: REMIX_WORKER_PROTOCOL_VERSION,
       id: job.id,
       orgId: job.orgId,
       tier: job.tier,
@@ -166,6 +170,11 @@ export async function POST(req: NextRequest) {
       creativeId: job.creativeId,
       claimToken: job.claimToken,
       attempt: job.attempt,
+      beats: job.beats,
+      costTokens: job.costTokens,
+      qcReport: job.qcReport,
+      outputUrl: job.outputUrl,
+      leaseSeconds,
       ...(job.tier === 't1' || job.tier === 't2' ? { refs } : {}),
     },
   })
