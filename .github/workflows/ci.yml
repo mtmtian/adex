@@ -41,6 +41,9 @@ jobs:
       - name: Type-check
         run: npx tsc --noEmit
 
+      - name: Unit tests
+        run: npm test
+
       - name: Build
         # Next.js build collects page data; our prisma client proxy is lazy
         # so no DATABASE_URL is needed here.

@@ -96,17 +96,22 @@ test.beforeAll(async ({}, testInfo) => {
   const unique = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   const email = `remix-jobs-e2e-${unique}@adex-e2e.dev`
   const res = await ctx.post(p('/api/auth/register'), {
-    data: { email, password: 'e2e-test-password-1', name: `Remix Jobs E2E ${unique}` },
+    data: { email, password: 'e2e-test-password-1', name: `${crypto.randomUUID().slice(0, 12)} Remix E2E` },
   })
   expect(res.ok(), await res.text()).toBeTruthy()
   userId = (await res.json()).id
+})
 
-  const orgsRes = await ctx.get(p('/api/orgs'))
-  expect(orgsRes.ok()).toBeTruthy()
-  const orgs = await orgsRes.json()
-  expect(Array.isArray(orgs)).toBe(true)
-  expect(orgs.length).toBeGreaterThan(0)
-  orgId = orgs[0].id
+// Keep real per-org cost/rate guards enabled without coupling unrelated cases
+// to the number of requests already made by this suite.
+test.beforeEach(async () => {
+  const res = await ctx.post(p('/api/orgs'), {
+    data: { name: `Remix E2E ${crypto.randomUUID()}` },
+  })
+  expect(res.status(), await res.text()).toBe(200)
+  orgId = (await res.json()).id
+  const switched = await ctx.post(p('/api/orgs/switch'), { data: { orgId } })
+  expect(switched.status(), await switched.text()).toBe(200)
 })
 
 test.afterAll(async () => {
@@ -159,6 +164,7 @@ async function createRemixJob(competitorCreativeId: string, extra?: Record<strin
   const res = await ctx.post(p('/api/creatives/remix-jobs'), {
     data: { competitorCreativeId, ...REMIX_PRODUCT, ...extra },
   })
+  if (!extra) expect(res.status(), await res.text()).toBe(200)
   return res
 }
 
@@ -263,6 +269,12 @@ test.describe('worker/remix-jobs — claim atomicity', () => {
     expect(typeof claim1Json.job.claimToken).toBe('string')
     expect(claim1Json.job.claimToken.length).toBeGreaterThan(0)
     expect(claim1Json.job.attempt).toBe(1)
+    expect(claim1Json.job.protocolVersion).toBe(2)
+    expect(typeof claim1Json.job.leaseSeconds).toBe('number')
+    expect(claim1Json.job).toHaveProperty('beats')
+    expect(claim1Json.job).toHaveProperty('costTokens')
+    expect(claim1Json.job).toHaveProperty('qcReport')
+    expect(claim1Json.job).toHaveProperty('outputUrl')
 
     const body2 = JSON.stringify({ jobId: job.id })
     const s2 = sign(WORKER_SECRET, body2)
@@ -330,6 +342,41 @@ async function createClaimedJobAtQc() {
 }
 
 test.describe('worker/remix-jobs — report', () => {
+  test('empty heartbeat refreshes the job and bounded beats/costs round-trip', async () => {
+    const competitorCreativeId = await ingestCompetitorCreative()
+    const createRes = await createRemixJob(competitorCreativeId)
+    const { job } = await createRes.json()
+    const claimed = await claimJob(job.id)
+
+    // Given an older lease timestamp, even an empty heartbeat must advance it.
+    await pool.query('UPDATE "RemixJob" SET "updatedAt" = $1 WHERE id = $2', [
+      new Date(Date.now() - 10 * 60_000), job.id,
+    ])
+    const beforeRes = await ctx.get(p(`/api/creatives/remix-jobs?id=${job.id}`))
+    const before = await beforeRes.json()
+    const heartbeat = await workerPost('/api/worker/remix-jobs/report', WORKER_SECRET, {
+      jobId: job.id,
+      claimToken: claimed.claimToken,
+    })
+    expect(heartbeat.status(), await heartbeat.text()).toBe(200)
+    const afterRes = await ctx.get(p(`/api/creatives/remix-jobs?id=${job.id}`))
+    const after = await afterRes.json()
+    expect(Date.parse(after.job.updatedAt)).toBeGreaterThan(Date.parse(before.job.updatedAt))
+    expect(after.job.status).toBe('claimed')
+
+    const beats = [{ index: 0, role: 'hook', status: 'done', seconds: 3, costTokens: 4 }]
+    const progress = await workerPost('/api/worker/remix-jobs/report', WORKER_SECRET, {
+      jobId: job.id,
+      claimToken: claimed.claimToken,
+      beats,
+      costTokens: 4,
+    })
+    expect(progress.status(), await progress.text()).toBe(200)
+    const progressJson = await progress.json()
+    expect(progressJson.job.beats).toEqual(beats)
+    expect(progressJson.job.costTokens).toBe(4)
+  })
+
   test('running report round-trips status + beats via GET ?id=', async () => {
     const competitorCreativeId = await ingestCompetitorCreative()
     const createRes = await createRemixJob(competitorCreativeId)
@@ -379,7 +426,7 @@ test.describe('worker/remix-jobs — report', () => {
     expect(getJson.job.creative.fileUrl).toBe(outputUrl)
   })
 
-  test('report after succeeded (terminal) → 409', async () => {
+  test('same terminal report is idempotent, conflicting terminal payload → 409', async () => {
     const job = await createClaimedJobAtQc()
     const outputUrl = canonicalOutputUrl(job.id, job.attempt)
     const okRes = await workerPost('/api/worker/remix-jobs/report', WORKER_SECRET, {
@@ -390,14 +437,127 @@ test.describe('worker/remix-jobs — report', () => {
     })
     expect(okRes.status(), await okRes.text()).toBe(200)
 
+    const replayRes = await workerPost('/api/worker/remix-jobs/report', WORKER_SECRET, {
+      jobId: job.id,
+      claimToken: job.claimToken,
+      status: 'succeeded',
+      outputUrl,
+    })
+    expect(replayRes.status(), await replayRes.text()).toBe(200)
+
     const afterRes = await workerPost('/api/worker/remix-jobs/report', WORKER_SECRET, {
       jobId: job.id,
       claimToken: job.claimToken,
-      status: 'running',
+      status: 'succeeded',
+      outputUrl: `${outputUrl}-different`,
     })
     expect(afterRes.status()).toBe(409)
     const afterJson = await afterRes.json()
     expect(afterJson.currentStatus).toBe('succeeded')
+
+    const restart = await workerPost('/api/worker/remix-jobs/report', WORKER_SECRET, {
+      jobId: job.id,
+      claimToken: job.claimToken,
+      status: 'running',
+    })
+    expect(restart.status()).toBe(409)
+  })
+
+  test('concurrent identical terminal reports resolve idempotently', async () => {
+    const job = await createClaimedJobAtQc()
+    const outputUrl = canonicalOutputUrl(job.id, job.attempt)
+    const payload = {
+      jobId: job.id,
+      claimToken: job.claimToken,
+      status: 'succeeded',
+      outputUrl,
+    }
+    const responses = await Promise.all([
+      workerPost('/api/worker/remix-jobs/report', WORKER_SECRET, payload),
+      workerPost('/api/worker/remix-jobs/report', WORKER_SECRET, payload),
+    ])
+    expect(responses.map((res) => res.status()).sort()).toEqual([200, 200])
+  })
+
+  test('protocol v2 success requires completed QC and actual media', async () => {
+    const job = await createClaimedJobAtQc()
+    const outputUrl = canonicalOutputUrl(job.id, job.attempt)
+    const missingQc = await workerPost('/api/worker/remix-jobs/report', WORKER_SECRET, {
+      jobId: job.id,
+      claimToken: job.claimToken,
+      protocolVersion: 2,
+      status: 'succeeded',
+      outputUrl,
+      media: { width: 1080, height: 1920, durationSec: 15 },
+    })
+    expect(missingQc.status()).toBe(400)
+
+    const missingMedia = await workerPost('/api/worker/remix-jobs/report', WORKER_SECRET, {
+      jobId: job.id,
+      claimToken: job.claimToken,
+      protocolVersion: 2,
+      status: 'succeeded',
+      outputUrl,
+      qcReport: { completed: true, pass: true },
+    })
+    expect(missingMedia.status()).toBe(400)
+
+    const incompleteQc = await workerPost('/api/worker/remix-jobs/report', WORKER_SECRET, {
+      jobId: job.id,
+      claimToken: job.claimToken,
+      protocolVersion: 2,
+      status: 'succeeded',
+      outputUrl,
+      qcReport: { completed: false, pass: true },
+      media: { width: 1080, height: 1920, durationSec: 15 },
+    })
+    expect(incompleteQc.status()).toBe(400)
+    const unchanged = await ctx.get(p(`/api/creatives/remix-jobs?id=${job.id}`))
+    expect((await unchanged.json()).job.status).toBe('qc')
+
+    const ok = await workerPost('/api/worker/remix-jobs/report', WORKER_SECRET, {
+      jobId: job.id,
+      claimToken: job.claimToken,
+      protocolVersion: 2,
+      status: 'succeeded',
+      outputUrl,
+      qcReport: { completed: true, pass: true, checks: { audio: 'PASS', ocr: 'PASS' } },
+      media: { width: 1080, height: 1920, durationSec: 15 },
+    })
+    expect(ok.status(), await ok.text()).toBe(200)
+
+    // PostgreSQL JSONB may return object keys in a different order; semantic
+    // equality should still make this exact v2 replay idempotent.
+    const replay = await workerPost('/api/worker/remix-jobs/report', WORKER_SECRET, {
+      jobId: job.id,
+      claimToken: job.claimToken,
+      protocolVersion: 2,
+      status: 'succeeded',
+      outputUrl,
+      qcReport: { pass: true, checks: { ocr: 'PASS', audio: 'PASS' }, completed: true },
+      media: { durationSec: 15, height: 1920, width: 1080 },
+    })
+    expect(replay.status(), await replay.text()).toBe(200)
+  })
+
+  test('protocol v2 QC pass:false keeps the creative ready for human review', async () => {
+    const job = await createClaimedJobAtQc()
+    const outputUrl = canonicalOutputUrl(job.id, job.attempt)
+    const res = await workerPost('/api/worker/remix-jobs/report', WORKER_SECRET, {
+      jobId: job.id,
+      claimToken: job.claimToken,
+      protocolVersion: 2,
+      status: 'succeeded',
+      outputUrl,
+      qcReport: { completed: true, pass: false, hits: [{ term: 'brand', beat: 0 }] },
+      media: { width: 1080, height: 1920, durationSec: 15 },
+    })
+    expect(res.status(), await res.text()).toBe(200)
+
+    const getRes = await ctx.get(p(`/api/creatives/remix-jobs?id=${job.id}`))
+    const getJson = await getRes.json()
+    expect(getJson.job.creative.status).toBe('ready')
+    expect(getJson.job.creative.reviewNotes).toContain('QC FAILED')
   })
 
   test('succeeded report on an unclaimed pending job → 409', async () => {
@@ -585,7 +745,7 @@ test.describe('worker/remix-jobs — t1/t2 refs (direct-SQL Asset)', () => {
       data: {
         email: `remix-jobs-e2e-orgb-${unique}@adex-e2e.dev`,
         password: 'e2e-test-password-1',
-        name: `Remix Jobs E2E OrgB ${unique}`,
+        name: `${crypto.randomUUID().slice(0, 12)} Remix OrgB`,
       },
     })
     expect(bRes.ok(), await bRes.text()).toBeTruthy()
