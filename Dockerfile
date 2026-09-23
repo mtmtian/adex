@@ -6,6 +6,9 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+# postinstall runs prisma generate during dependency installation.
+COPY prisma/schema.prisma ./prisma/schema.prisma
+COPY prisma.config.ts ./
 RUN npm install --frozen-lockfile 2>/dev/null || npm install
 
 # Rebuild the source code only when needed

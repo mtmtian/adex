@@ -50,3 +50,21 @@ jobs:
         env:
           AUTH_TOKEN_SECRET: ci-test-secret-not-used-for-runtime
         run: npm run build
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build production image without database credentials
+        run: docker build --tag adex:ci .
+
+      - name: Check runtime dependencies offline
+        run: >-
+          docker run --rm --network none --entrypoint node adex:ci
+          --eval 'require("bcrypt").hashSync("docker-smoke", 4);
+          require("pg"); require("@prisma/adapter-pg")'
