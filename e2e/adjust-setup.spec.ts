@@ -287,6 +287,13 @@ test.describe('Adjust setup with a real isolated database and local HTTP provide
         fullPage: true,
       })
       await page.setViewportSize({ width: 390, height: 844 })
+      await expect
+        .poll(() =>
+          page.getByRole('complementary').evaluate(
+            (element) => element.getBoundingClientRect().right,
+          ),
+        )
+        .toBeLessThanOrEqual(0)
       expect(
         await page.evaluate(() => document.documentElement.scrollWidth),
       ).toBeLessThanOrEqual(390)
