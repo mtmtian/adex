@@ -38,6 +38,7 @@ export async function POST(req: NextRequest) {
     const { org } = await requireAuthWithOrg()
     const data = await req.json()
     const platform = String(data.platform || '').trim()
+    if (platform === 'adjust') return NextResponse.json({ error: 'Use Adjust setup to manage app configurations' }, { status: 400 })
     const accountId = String(data.accountId || '').trim()
     if (!platform || !accountId) {
       return NextResponse.json({ error: 'platform and accountId are required' }, { status: 400 })
@@ -100,8 +101,9 @@ export async function POST(req: NextRequest) {
 // a new primary via a subsequent POST; we don't auto-promote.
 export async function DELETE(req: NextRequest) {
   try {
-    const { org } = await requireAuthWithOrg()
+    const { org, role } = await requireAuthWithOrg()
     const { platform, accountId } = await req.json()
+    if (platform === 'adjust' && role === 'member') return NextResponse.json({ error: 'Workspace admin access required' }, { status: 403 })
     if (!platform || !accountId) {
       return NextResponse.json({ error: 'platform and accountId are required' }, { status: 400 })
     }
