@@ -140,8 +140,9 @@ export function AdjustReportView({
         ))}
       </dl>
       <div className="flex flex-wrap items-end gap-3">
-        <Field label="流量筛选">
+        <Field htmlFor="adjust-filter-traffic" label="流量筛选">
           <select
+            id="adjust-filter-traffic"
             className={inputClass}
             value={traffic}
             onChange={(event) => setTraffic(event.target.value)}
@@ -154,8 +155,9 @@ export function AdjustReportView({
             ))}
           </select>
         </Field>
-        <Field label="平台筛选">
+        <Field htmlFor="adjust-filter-platform" label="平台筛选">
           <select
+            id="adjust-filter-platform"
             className={inputClass}
             value={platform}
             onChange={(event) => setPlatform(event.target.value)}

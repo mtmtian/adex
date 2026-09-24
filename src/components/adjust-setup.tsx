@@ -186,8 +186,12 @@ export function AdjustSetup() {
       {state?.canManage && (
         <section className="flex flex-wrap items-end gap-3 border-b pb-5">
           <div className="w-full max-w-md">
-            <Field label={state.connected ? '替换 API Token' : 'API Token'}>
+            <Field
+              htmlFor="adjust-token"
+              label={state.connected ? '替换 API Token' : 'API Token'}
+            >
               <input
+                id="adjust-token"
                 className={inputClass}
                 type="password"
                 autoComplete="off"
@@ -234,8 +238,9 @@ export function AdjustSetup() {
         <>
           <section className="flex flex-wrap items-end gap-3">
             <div className="w-full max-w-md">
-              <Field label="Adjust 应用">
+              <Field htmlFor="adjust-app" label="Adjust 应用">
                 <select
+                  id="adjust-app"
                   className={inputClass}
                   value={plan?.appToken || ''}
                   disabled={busy}
@@ -272,8 +277,9 @@ export function AdjustSetup() {
                 busy={busy}
               />
               <section className="flex flex-wrap items-end gap-3">
-                <Field label="开始日期">
+                <Field htmlFor="adjust-start-date" label="开始日期">
                   <input
+                    id="adjust-start-date"
                     className={inputClass}
                     type="date"
                     value={startDate}
@@ -281,8 +287,9 @@ export function AdjustSetup() {
                     onChange={(event) => setStart(event.target.value)}
                   />
                 </Field>
-                <Field label="结束日期">
+                <Field htmlFor="adjust-end-date" label="结束日期">
                   <input
+                    id="adjust-end-date"
                     className={inputClass}
                     type="date"
                     value={endDate}

@@ -15,16 +15,20 @@ export const inputClass =
   'w-full min-w-0 rounded border border-gray-300 bg-white px-3 py-2 text-sm'
 
 export function Field({
+  htmlFor,
   label,
   children,
 }: {
+  htmlFor: string
   label: string
   children: ReactNode
 }) {
   return (
-    <label className="block min-w-0 space-y-1 text-sm">
-      <span className="font-medium">{label}</span>
+    <div className="min-w-0 space-y-1 text-sm">
+      <label htmlFor={htmlFor} className="block font-medium">
+        {label}
+      </label>
       {children}
-    </label>
+    </div>
   )
 }

@@ -44,8 +44,9 @@ export function AdjustPlanForm({
     <fieldset disabled={busy || !canManage} className="space-y-5 border-b pb-5">
       <legend className="mb-3 text-lg font-semibold">应用配置</legend>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Field label="关联 Adex 产品">
+        <Field htmlFor="adjust-product" label="关联 Adex 产品">
           <select
+            id="adjust-product"
             className={inputClass}
             value={plan.productId || ''}
             onChange={(event) =>
@@ -63,8 +64,9 @@ export function AdjustPlanForm({
             ))}
           </select>
         </Field>
-        <Field label="报表币种">
+        <Field htmlFor="adjust-currency" label="报表币种">
           <select
+            id="adjust-currency"
             className={inputClass}
             value={plan.currency}
             onChange={(event) =>
@@ -76,8 +78,9 @@ export function AdjustPlanForm({
             ))}
           </select>
         </Field>
-        <Field label="UTC 偏移">
+        <Field htmlFor="adjust-utc-offset" label="UTC 偏移">
           <input
+            id="adjust-utc-offset"
             className={inputClass}
             value={plan.utcOffset}
             onChange={(event) =>
@@ -86,8 +89,9 @@ export function AdjustPlanForm({
             placeholder="+00:00"
           />
         </Field>
-        <Field label="归因来源">
+        <Field htmlFor="adjust-attribution-source" label="归因来源">
           <select
+            id="adjust-attribution-source"
             className={inputClass}
             value={plan.attributionSource}
             onChange={(event) =>
@@ -106,8 +110,12 @@ export function AdjustPlanForm({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {METRIC_SLOTS.map((slot) => (
           <div key={slot} className="space-y-2">
-            <Field label={`${metricNames[slot]}指标`}>
+            <Field
+              htmlFor={`adjust-metric-${slot}`}
+              label={`${metricNames[slot]}指标`}
+            >
               <select
+                id={`adjust-metric-${slot}`}
                 className={inputClass}
                 value={plan.metrics[slot]?.id || ''}
                 onChange={(event) => setMetric(slot, event.target.value)}
@@ -130,8 +138,9 @@ export function AdjustPlanForm({
               </select>
             </Field>
             {slot === 'registration' && plan.metrics.registration && (
-              <Field label="注册计数口径">
+              <Field htmlFor="adjust-registration-kind" label="注册计数口径">
                 <select
+                  id="adjust-registration-kind"
                   className={inputClass}
                   value={plan.metrics.registration.kind}
                   onChange={(event) =>
@@ -233,8 +242,12 @@ export function AdjustPlanForm({
             key={index}
             className="grid grid-cols-1 items-end gap-2 sm:grid-cols-[1fr_1fr_1fr_1fr_36px]"
           >
-            <Field label="原始 Network">
+            <Field
+              htmlFor={`adjust-rule-${index}-network`}
+              label="原始 Network"
+            >
               <input
+                id={`adjust-rule-${index}-network`}
                 className={inputClass}
                 value={rule.network}
                 onChange={(event) =>
@@ -249,8 +262,12 @@ export function AdjustPlanForm({
                 }
               />
             </Field>
-            <Field label="原始 Partner">
+            <Field
+              htmlFor={`adjust-rule-${index}-partner`}
+              label="原始 Partner"
+            >
               <input
+                id={`adjust-rule-${index}-partner`}
                 className={inputClass}
                 value={rule.partner}
                 onChange={(event) =>
@@ -265,8 +282,9 @@ export function AdjustPlanForm({
                 }
               />
             </Field>
-            <Field label="流量类型">
+            <Field htmlFor={`adjust-rule-${index}-traffic`} label="流量类型">
               <select
+                id={`adjust-rule-${index}-traffic`}
                 className={inputClass}
                 value={rule.traffic}
                 onChange={(event) =>
@@ -294,8 +312,9 @@ export function AdjustPlanForm({
                 ))}
               </select>
             </Field>
-            <Field label="平台">
+            <Field htmlFor={`adjust-rule-${index}-platform`} label="平台">
               <select
+                id={`adjust-rule-${index}-platform`}
                 className={inputClass}
                 value={rule.platform || ''}
                 onChange={(event) =>
