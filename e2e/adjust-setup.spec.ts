@@ -128,7 +128,7 @@ test.describe('Adjust setup with a real isolated database and local HTTP provide
           data: {
             email: `adjust-${suffix}@adex-e2e.dev`,
             password: 'fixture-password-1',
-            name: 'Adjust fixture',
+            name: `Adjust ${suffix.slice(0, 8)}`,
           },
         })
       ).ok(),

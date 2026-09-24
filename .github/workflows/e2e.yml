@@ -39,7 +39,7 @@ jobs:
       REPORT_DB_TESTS: '1'
       ADJUST_TEST_API_URL: http://127.0.0.1:3322
       # Fixture-only encryption key. Never deploy this value.
-      PLATFORM_CREDENTIAL_KEY: BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc=
+      PLATFORM_CREDENTIAL_KEY: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
 
     steps:
       - uses: actions/checkout@v4
