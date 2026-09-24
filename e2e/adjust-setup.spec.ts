@@ -271,7 +271,7 @@ test.describe('Adjust setup with a real isolated database and local HTTP provide
       await expect(
         page.getByRole('heading', { name: 'luddi / 报表' }),
       ).toBeVisible()
-      await expect(page.getByRole('alert')).toContainText(
+      await expect(page.getByRole('main').getByRole('alert')).toContainText(
         'Adjust request failed',
       )
       await expect(page.getByLabel('注册指标', { exact: true })).toHaveValue(
