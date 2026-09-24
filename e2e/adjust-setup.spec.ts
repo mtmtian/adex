@@ -243,6 +243,61 @@ test.describe('Adjust setup with a real isolated database and local HTTP provide
       await (await ctx.get(p('/api/adjust/reports?appToken=luddi'))).json(),
     ).toEqual(before)
   })
+  test('saved reports remain readable when event discovery is unavailable', async ({
+    page,
+  }, info) => {
+    await page.context().addCookies((await ctx.storageState()).cookies)
+    await page.setViewportSize({ width: 1440, height: 1000 })
+    await page.goto(p('/settings/adjust'))
+    await page
+      .getByLabel('Adjust 应用', { exact: true })
+      .selectOption('cuddler')
+    await expect(
+      page.getByRole('heading', { name: 'cuddler / 报表' }),
+    ).toBeVisible()
+    await page.getByLabel('UTC 偏移', { exact: true }).fill(' +00:00 ')
+    await page.getByRole('button', { name: '预览', exact: true }).click()
+    await expect(page.getByLabel('UTC 偏移', { exact: true })).toHaveValue(
+      '+00:00',
+    )
+    await expect(
+      page.getByRole('button', { name: '保存并同步', exact: true }),
+    ).toBeEnabled()
+    failing = true
+    try {
+      await page
+        .getByLabel('Adjust 应用', { exact: true })
+        .selectOption('luddi')
+      await expect(
+        page.getByRole('heading', { name: 'luddi / 报表' }),
+      ).toBeVisible()
+      await expect(page.getByRole('alert')).toContainText(
+        'Adjust request failed',
+      )
+      await expect(page.getByLabel('注册指标', { exact: true })).toHaveValue(
+        'luddi_signup',
+      )
+      await expect(
+        page
+          .locator('option:checked')
+          .filter({ hasText: 'Registration / luddi_signup' }),
+      ).toHaveCount(1)
+      await page.screenshot({
+        path: info.outputPath('adjust-desktop.png'),
+        fullPage: true,
+      })
+      await page.setViewportSize({ width: 390, height: 844 })
+      expect(
+        await page.evaluate(() => document.documentElement.scrollWidth),
+      ).toBeLessThanOrEqual(390)
+      await page.screenshot({
+        path: info.outputPath('adjust-mobile.png'),
+        fullPage: true,
+      })
+    } finally {
+      failing = false
+    }
+  })
   test('configuration changes mark the prior snapshot stale until refreshed', async () => {
     const changed = {
       ...plan('luddi'),
@@ -297,6 +352,27 @@ test.describe('Adjust setup with a real isolated database and local HTTP provide
       expect(combined.status()).toBe(200)
       expect((await combined.json()).results.adjust.error).toBe(
         'Workspace admin access required',
+      )
+      for (const endpoint of ['/api/platforms', '/api/platforms/accounts']) {
+        for (const data of [
+          {},
+          { platform: { not: 'unknown' }, accountId: { not: 'unknown' } },
+        ]) {
+          expect((await ctx.delete(p(endpoint), { data })).status()).toBe(400)
+        }
+        expect(
+          (
+            await ctx.delete(p(endpoint), {
+              data: { platform: 'adjust', accountId: 'luddi' },
+            })
+          ).status(),
+        ).toBe(403)
+      }
+      expect(
+        (await ctx.get(p('/api/adjust/reports?appToken=luddi'))).status(),
+      ).toBe(200)
+      expect((await (await ctx.get(p('/api/adjust'))).json()).connected).toBe(
+        true,
       )
       expect(calls).toBe(before)
     } finally {

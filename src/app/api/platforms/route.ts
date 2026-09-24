@@ -108,8 +108,10 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const { org, user, role } = await requireAuthWithOrg()
-    const { platform } = await req.json()
-    if (platform === 'adjust' && role === 'member') return NextResponse.json({ error: 'Workspace admin access required' }, { status: 403 })
+    const body = await req.json()
+    const platform = typeof body?.platform === 'string' ? body.platform.trim() : ''
+    if (!platform) return NextResponse.json({ error: 'platform is required' }, { status: 400 })
+    if (platform === 'adjust' && !['owner', 'admin'].includes(role)) return NextResponse.json({ error: 'Workspace admin access required' }, { status: 403 })
     await prisma.$transaction([
       prisma.platformAccount.deleteMany({ where: { orgId: org.id, platform } }),
       prisma.platformAuth.deleteMany({ where: { orgId: org.id, platform } }),

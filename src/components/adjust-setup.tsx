@@ -124,13 +124,7 @@ export function AdjustSetup() {
       metrics: {},
       sourceRules: [],
     }
-    const catalog = state?.canManage
-      ? await request<{ events: AdjustEvent[] }>(
-          `/api/adjust/catalog?appToken=${encodeURIComponent(appToken)}`,
-        )
-      : { events: [] }
-    if (!Array.isArray(catalog.events)) throw new Error('Invalid event catalog')
-    setEvents(catalog.events)
+    // Saved data remains available even when the provider catalog is down.
     setPlan(next)
     if (saved)
       setReport(
@@ -138,6 +132,13 @@ export function AdjustSetup() {
           `/api/adjust/reports?appToken=${encodeURIComponent(appToken)}`,
         ),
       )
+    const catalog = state?.canManage
+      ? await request<{ events: AdjustEvent[] }>(
+          `/api/adjust/catalog?appToken=${encodeURIComponent(appToken)}`,
+        )
+      : { events: [] }
+    if (!Array.isArray(catalog.events)) throw new Error('Invalid event catalog')
+    setEvents(catalog.events)
   }
 
   const saved =
@@ -295,15 +296,15 @@ export function AdjustSetup() {
                       variant="outline"
                       disabled={busy}
                       onClick={() =>
-                        run(async () =>
-                          setReport(
-                            await request<Report>(
-                              '/api/adjust/reports',
-                              'POST',
-                              { plan, startDate, endDate },
-                            ),
-                          ),
-                        )
+                        run(async () => {
+                          const preview = await request<Report>(
+                            '/api/adjust/reports',
+                            'POST',
+                            { plan, startDate, endDate },
+                          )
+                          setPlan(preview.plan)
+                          setReport(preview)
+                        })
                       }
                     >
                       <Eye size={16} className="mr-2" />

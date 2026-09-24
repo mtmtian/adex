@@ -1,15 +1,15 @@
-"use client";
-import { Button } from "@/components/ui/button";
-import { Plus, Trash2 } from "lucide-react";
+'use client'
+import { Button } from '@/components/ui/button'
+import { Plus, Trash2 } from 'lucide-react'
 import {
   ADJUST_PLATFORMS,
   METRIC_SLOTS,
   type AdjustPlan,
   type MetricSlot,
   type Traffic,
-} from "@/lib/reports/adjust-data";
-import type { AdjustEvent } from "@/lib/platforms/adjust";
-import { Field, inputClass, metricNames, trafficNames } from "./fields";
+} from '@/lib/reports/adjust-data'
+import type { AdjustEvent } from '@/lib/platforms/adjust'
+import { Field, inputClass, metricNames, trafficNames } from './fields'
 
 export function AdjustPlanForm({
   plan,
@@ -19,25 +19,25 @@ export function AdjustPlanForm({
   canManage,
   busy,
 }: {
-  plan: AdjustPlan;
-  setPlan: (plan: AdjustPlan) => void;
-  events: AdjustEvent[];
-  products: Array<{ id: string; name: string; platform: string }>;
-  canManage: boolean;
-  busy: boolean;
+  plan: AdjustPlan
+  setPlan: (plan: AdjustPlan) => void
+  events: AdjustEvent[]
+  products: Array<{ id: string; name: string; platform: string }>
+  canManage: boolean
+  busy: boolean
 }) {
   function setMetric(slot: MetricSlot, id: string) {
-    const metrics = { ...plan.metrics };
-    const event = events.find((event) => event.id === id);
-    if (!event) delete metrics[slot];
+    const metrics = { ...plan.metrics }
+    const event = events.find((event) => event.id === id)
+    if (!event) delete metrics[slot]
     else
       metrics[slot] = {
         id,
         name: event.name,
         kind:
-          slot === "revenue" ? "money" : slot === "payer" ? "users" : "events",
-      };
-    setPlan({ ...plan, metrics, metricsConfirmed: false });
+          slot === 'revenue' ? 'money' : slot === 'payer' ? 'users' : 'events',
+      }
+    setPlan({ ...plan, metrics, metricsConfirmed: false })
   }
 
   return (
@@ -47,7 +47,7 @@ export function AdjustPlanForm({
         <Field label="关联 Adex 产品">
           <select
             className={inputClass}
-            value={plan.productId || ""}
+            value={plan.productId || ''}
             onChange={(event) =>
               setPlan({
                 ...plan,
@@ -71,7 +71,7 @@ export function AdjustPlanForm({
               setPlan({ ...plan, currency: event.target.value })
             }
           >
-            {["USD", "CNY", "EUR", "GBP", "JPY", "KRW"].map((currency) => (
+            {['USD', 'CNY', 'EUR', 'GBP', 'JPY', 'KRW'].map((currency) => (
               <option key={currency}>{currency}</option>
             ))}
           </select>
@@ -94,7 +94,7 @@ export function AdjustPlanForm({
               setPlan({
                 ...plan,
                 attributionSource: event.target
-                  .value as AdjustPlan["attributionSource"],
+                  .value as AdjustPlan['attributionSource'],
               })
             }
           >
@@ -109,10 +109,19 @@ export function AdjustPlanForm({
             <Field label={`${metricNames[slot]}指标`}>
               <select
                 className={inputClass}
-                value={plan.metrics[slot]?.id || ""}
+                value={plan.metrics[slot]?.id || ''}
                 onChange={(event) => setMetric(slot, event.target.value)}
               >
                 <option value="">未配置</option>
+                {plan.metrics[slot] &&
+                  !events.some(
+                    (event) => event.id === plan.metrics[slot]?.id,
+                  ) && (
+                    <option value={plan.metrics[slot]!.id} disabled>
+                      {plan.metrics[slot]!.name} / {plan.metrics[slot]!.id}{' '}
+                      (已保存)
+                    </option>
+                  )}
                 {events.map((event) => (
                   <option key={event.id} value={event.id}>
                     {event.name} / {event.id}
@@ -120,7 +129,7 @@ export function AdjustPlanForm({
                 ))}
               </select>
             </Field>
-            {slot === "registration" && plan.metrics.registration && (
+            {slot === 'registration' && plan.metrics.registration && (
               <Field label="注册计数口径">
                 <select
                   className={inputClass}
@@ -133,7 +142,7 @@ export function AdjustPlanForm({
                         ...plan.metrics,
                         registration: {
                           ...plan.metrics.registration!,
-                          kind: event.target.value as "events" | "users",
+                          kind: event.target.value as 'events' | 'users',
                         },
                       },
                     })
@@ -173,11 +182,11 @@ export function AdjustPlanForm({
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
-            checked={plan.reattributed === "all"}
+            checked={plan.reattributed === 'all'}
             onChange={(event) =>
               setPlan({
                 ...plan,
-                reattributed: event.target.checked ? "all" : "false",
+                reattributed: event.target.checked ? 'all' : 'false',
               })
             }
           />
@@ -206,9 +215,9 @@ export function AdjustPlanForm({
                 sourceRules: [
                   ...plan.sourceRules,
                   {
-                    network: "",
-                    partner: "",
-                    traffic: "unknown",
+                    network: '',
+                    partner: '',
+                    traffic: 'unknown',
                     platform: null,
                   },
                 ],
@@ -269,7 +278,7 @@ export function AdjustPlanForm({
                             ...rule,
                             traffic: event.target.value as Traffic,
                             platform:
-                              event.target.value === "organic"
+                              event.target.value === 'organic'
                                 ? null
                                 : rule.platform,
                           }
@@ -288,7 +297,7 @@ export function AdjustPlanForm({
             <Field label="平台">
               <select
                 className={inputClass}
-                value={rule.platform || ""}
+                value={rule.platform || ''}
                 onChange={(event) =>
                   setPlan({
                     ...plan,
@@ -326,5 +335,5 @@ export function AdjustPlanForm({
         ))}
       </div>
     </fieldset>
-  );
+  )
 }
