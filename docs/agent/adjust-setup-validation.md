@@ -83,8 +83,8 @@ env -u DATABASE_URL -u SEEDANCE2_API_KEY -u ANTHROPIC_API_KEY \
   and production build passed. Lint has zero errors and 35 existing warnings
   outside changed files; targeted lint of the final sync permission change
   also passed. `git diff --check` passed.
-- Local full E2E run: 58 total, 25 passed and 33 skipped. Database-dependent
-  cases, including all eight Adjust database cases, were skipped without
+- Local full E2E run: 59 total, 25 passed and 34 skipped. Database-dependent
+  cases, including all nine Adjust database cases, were skipped without
   `DATABASE_URL`. This is not a successful database integration run; the new
   member-permission and existing-user-cookie cases still require CI execution.
 
@@ -101,12 +101,18 @@ not actual provider data or final database integration.
 
 ## Database and Release Gates
 
-The eight database E2E cases in `e2e/adjust-setup.spec.ts` use real Postgres and a
+The nine database E2E cases in `e2e/adjust-setup.spec.ts` use real Postgres and a
 local HTTP provider, not mocked Prisma. They require the existing isolated CI
 database with `REPORT_DB_TESTS=1` and `ADJUST_TEST_API_URL=http://127.0.0.1:3322`.
 The latter is rejected when `NODE_ENV=production`; never deploy it. CI's
 encryption key is fixture-only. The PR's checks must verify these cases before
 merge; local no-database checks alone are insufficient.
+
+The DB-backed UI case checks normalized preview values, cached-report access
+when the provider catalog fails, saved metric labels and mobile overflow. It
+records desktop/mobile screenshots under the workflow's `playwright-report`
+artifact, including successful runs. Disconnect tests reject missing or
+object-valued filters before any delete and preserve the connection for members.
 
 Before release:
 
@@ -131,3 +137,11 @@ Fixed UTC offsets do not automatically follow daylight-saving transitions.
 No custom external API URL import or Adjust OAuth account login is implemented.
 Media-cost joins, durable daily history and cohort/maturity processing remain
 separate work under [the reporting contract](../growth/07-media-adjust-reporting.md).
+
+## Recovery
+
+Before the first real Adjust credential is stored, reverting the Cloud Run
+revision can leave the additive table and unused encryption key in place.
+After encrypted credentials are stored, pre-feature clients cannot use them:
+prefer a forward fix rather than blindly returning to the plaintext client.
+Never rotate or delete the encryption key as part of a rollback.
